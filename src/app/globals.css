@@ -22,15 +22,33 @@
   --font-small: 14px;
   --font-title: 22px;
   --ctrl-h: 46px; /* chiều cao input/button */
+
+  /* Bottom nav height (để chừa padding dưới) */
+  --bottom-nav-h: 76px;
 }
 
 *{ box-sizing:border-box; }
-html,body{ height:100%; }
+
+/* ===== MOBILE SCROLL FIX (global) =====
+   - Tránh kéo xuống lộ trắng
+   - Tránh bị “kẹt scroll” do height:100% */
+html, body{
+  height: auto;
+  min-height: 100%;
+  background: #120907;          /* fallback nền */
+  overscroll-behavior-y: none;  /* giảm rubber band */
+}
+
 body{
   margin:0;
   color:var(--text);
   font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
   font-size: var(--font-base);
+
+  min-height: 100vh;
+  min-height: 100svh; /* chuẩn mobile mới */
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
 
   /* Nền nâu ấm + ánh vàng Amora */
   background:
@@ -38,6 +56,7 @@ body{
     radial-gradient(800px 520px at 88% 18%, rgba(60,31,26,.55), transparent 60%),
     radial-gradient(1200px 800px at 50% 110%, rgba(241,191,80,.10), transparent 55%),
     linear-gradient(180deg, #1a0f0c, var(--bg) 70%);
+  background-color: #120907; /* fallback để không lộ trắng */
 }
 
 a{ color:inherit; text-decoration:none; }
@@ -46,7 +65,7 @@ a:hover{ opacity:.92; }
 .container{
   max-width: 1040px;
   margin: 0 auto;
-  padding: 18px 16px 96px; /* chừa chỗ cho bottom nav */
+  padding: 18px 16px calc(var(--bottom-nav-h) + 24px);
 }
 
 /* ===== Topbar / Card ===== */
@@ -147,6 +166,7 @@ a:hover{ opacity:.92; }
   font-size: 16px;
 }
 .btn:hover{ border-color: rgba(241,191,80,.60); }
+.btn:disabled{ opacity:.6; cursor:not-allowed; }
 
 .btn.primary{
   border-color: rgba(241,191,80,.55);
@@ -171,11 +191,24 @@ a:hover{ opacity:.92; }
   border: 1px solid rgba(241,191,80,.25);
 }
 
-/* ===== Table ===== */
+/* ===== Table + Scroll Wrapper ===== */
+.tableWrap{
+  width:100%;
+  max-width: 100%;
+  overflow: auto;                 /* X + Y */
+  max-height: 62vh;               /* scroll Y trong khung */
+  border-radius: 16px;
+  -webkit-overflow-scrolling: touch; /* iPhone mượt */
+  overscroll-behavior: contain;
+  border:1px solid rgba(241,191,80,.14);
+}
+
 .table{
   width:100%;
+  min-width: 860px;              /* để có scroll X khi màn nhỏ */
   border-collapse: collapse;
 }
+
 .table th, .table td{
   padding: 12px 12px;
   border-top: 1px solid rgba(241,191,80,.10);
@@ -210,12 +243,14 @@ a:hover{ opacity:.92; }
   border-top: 1px solid rgba(241,191,80,.14);
   backdrop-filter: blur(10px);
 }
+
 .bottomNav .wrap{
   max-width: 1040px;
   margin:0 auto;
   display:flex;
   gap: 10px;
 }
+
 .navItem{
   flex:1;
   text-align:center;
@@ -226,6 +261,7 @@ a:hover{ opacity:.92; }
   color: rgba(255,247,234,.82);
   font-size: 14px;
 }
+
 .navItem.active{
   color:#1b120a;
   border-color: rgba(241,191,80,.55);
@@ -236,30 +272,24 @@ a:hover{ opacity:.92; }
 /* ===== Messages ===== */
 .msgErr{ color: var(--danger); font-size: 15px; }
 .msgOk{ color: var(--ok); font-size: 15px; }
-.tableWrap{
-  width:100%;
-  overflow-x:auto;
-  overflow-y:auto;
-  max-height: 62vh;           /* scroll Y */
-  border-radius: 16px;
-  -webkit-overflow-scrolling: touch; /* iPhone mượt */
-  border:1px solid rgba(241,191,80,.14);
-}
-
-.table{
-  min-width: 860px;          /* để có scroll X khi màn nhỏ */
-}
-
-@media (max-width: 720px){
-  .tableWrap{ max-height: 58vh; }
-  .table{ min-width: 780px; }
-}
 
 /* ===== Mobile ===== */
 @media (max-width: 720px){
-  .container{ padding-bottom: 104px; }
   :root{
     --font-title: 20px;
-    --ctrl-h: 48px; /* mobile bấm dễ hơn */
+    --ctrl-h: 48px;
+    --bottom-nav-h: 84px; /* mobile thường nav cao hơn */
+  }
+
+  .container{
+    padding-bottom: calc(var(--bottom-nav-h) + 24px);
+  }
+
+  .tableWrap{ max-height: 58vh; }
+  .table{ min-width: 780px; }
+
+  /* Đỡ bể layout các field nếu bạn có inline style gridColumn */
+  .field[style*="grid-column"]{
+    grid-column: span 12 !important;
   }
 }
