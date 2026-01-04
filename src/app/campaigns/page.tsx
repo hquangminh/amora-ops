@@ -37,14 +37,8 @@ export default function CampaignsPage() {
   const [total, setTotal] = useState(0);
 
   const refresh = async () => {
-    const { data, error } = await supabase
-      .from("ad_campaigns")
-      .select("id,name,channel,start_date,end_date,note,is_active,created_at")
-      .order("created_at", { ascending: false })
-      .limit(200);
-
-    if (error) alert(error.message);
-    else setRows((data as any) ?? []);
+    setPage(1);
+    await fetchRows(1);
   };
 
   useEffect(() => {
@@ -103,18 +97,33 @@ export default function CampaignsPage() {
     });
   }, [rows, q, onlyActive]);
 
-  const fetchRows = async () => {
-    const from = (page - 1) * pageSize;
+  const fetchRows = async (p = page) => {
+    const from = (p - 1) * pageSize;
     const to = from + pageSize - 1;
 
-    const { data, count, error } = await supabase
-      .from("customers")
-      .select("id,name,phone,address,created_at", { count: "exact" })
+    let query = supabase
+      .from("ad_campaigns")
+      .select("id,name,channel,start_date,end_date,note,is_active,created_at", {
+        count: "exact",
+      });
+
+    if (onlyActive) query = query.eq("is_active", true);
+
+    const qq = q.trim();
+    if (qq) {
+      // OR: name / channel / note
+      query = query.or(
+        `name.ilike.%${qq}%,channel.ilike.%${qq}%,note.ilike.%${qq}%`
+      );
+    }
+
+    const { data, count, error } = await query
       .order("created_at", { ascending: false })
       .range(from, to);
 
     if (error) return alert(error.message);
-    setRows(data ?? []);
+
+    setRows((data as Campaign[]) ?? []);
     setTotal(count ?? 0);
   };
 
