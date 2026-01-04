@@ -1,26 +1,265 @@
-@import "tailwindcss";
+:root{
+  /* ===== Amora Brand ===== */
+  --brand:#F1BF50;   /* vàng Amora */
+  --brand2:#3C1F1A;  /* nâu Amora */
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* ===== Theme (ấm - nâu, không đen xanh) ===== */
+  --bg:#120907;
+  --panel: rgba(42,21,16,.78);    /* nâu kính */
+  --panel2: rgba(26,15,12,.68);   /* nâu tối */
+  --text:#fff7ea;                /* ngà sáng dễ đọc */
+  --muted:#e7d9c3;
+  --line: rgba(241,191,80,.22);
+
+  --danger:#ef4444;
+  --ok:#22c55e;
+
+  --shadow: 0 14px 40px rgba(0,0,0,.38);
+  --radius: 18px;
+
+  /* Người lớn tuổi: scale */
+  --font-base: 16px;
+  --font-small: 14px;
+  --font-title: 22px;
+  --ctrl-h: 46px; /* chiều cao input/button */
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+*{ box-sizing:border-box; }
+html,body{ height:100%; }
+body{
+  margin:0;
+  color:var(--text);
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+  font-size: var(--font-base);
+
+  /* Nền nâu ấm + ánh vàng Amora */
+  background:
+    radial-gradient(900px 520px at 18% 0%, rgba(241,191,80,.18), transparent 60%),
+    radial-gradient(800px 520px at 88% 18%, rgba(60,31,26,.55), transparent 60%),
+    radial-gradient(1200px 800px at 50% 110%, rgba(241,191,80,.10), transparent 55%),
+    linear-gradient(180deg, #1a0f0c, var(--bg) 70%);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+a{ color:inherit; text-decoration:none; }
+a:hover{ opacity:.92; }
+
+.container{
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 18px 16px 96px; /* chừa chỗ cho bottom nav */
+}
+
+/* ===== Topbar / Card ===== */
+.topbar{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  padding: 14px 16px;
+  border:1px solid var(--line);
+  background: var(--panel);
+  backdrop-filter: blur(10px);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.brand{
+  display:flex; align-items:center; gap:12px;
+  font-weight: 800;
+  letter-spacing: .2px;
+}
+
+.card{
+  border:1px solid var(--line);
+  background: var(--panel);
+  backdrop-filter: blur(10px);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.card-h{
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:10px;
+}
+
+.card-b{ padding: 14px; }
+
+/* ===== Typography (dễ nhìn) ===== */
+.h1{ font-size: var(--font-title); margin: 0; font-weight: 900; }
+.h2{ font-size: 18px; margin: 0; font-weight: 800; }
+.p{
+  color: var(--muted);
+  margin: 8px 0 0;
+  font-size: 16px;
+  line-height: 1.35;
+}
+
+.muted{ color: var(--muted); }
+.right{ text-align:right; }
+
+.row{ display:flex; gap:10px; flex-wrap:wrap; }
+.grid{
+  display:grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap:10px;
+}
+
+/* ===== Form controls (to + rõ) ===== */
+.label{
+  font-size: var(--font-small);
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.field{ display:flex; flex-direction:column; gap:6px; }
+
+.input, .select{
+  width:100%;
+  min-height: var(--ctrl-h);
+  padding: 12px 14px;
+  border-radius: 14px;
+  border:1px solid rgba(241,191,80,.22);
+  background: rgba(18,9,7,.45);
+  color: var(--text);
+  outline:none;
+  font-size: 16px;
+}
+.input::placeholder{ color: rgba(231,217,195,.65); }
+
+.input:focus, .select:focus{
+  border-color: rgba(241,191,80,.70);
+  box-shadow: 0 0 0 5px rgba(241,191,80,.14);
+}
+
+/* ===== Buttons ===== */
+.btn{
+  min-height: var(--ctrl-h);
+  padding: 12px 16px;
+  border-radius: 14px;
+  border:1px solid rgba(241,191,80,.22);
+  background: rgba(18,9,7,.50);
+  color: var(--text);
+  cursor:pointer;
+  font-size: 16px;
+}
+.btn:hover{ border-color: rgba(241,191,80,.60); }
+
+.btn.primary{
+  border-color: rgba(241,191,80,.55);
+  background: linear-gradient(180deg, rgba(241,191,80,.48), rgba(241,191,80,.12));
+  color: #1b120a;
+  font-weight: 900;
+}
+
+.btn.danger{
+  border-color: rgba(239,68,68,.35);
+  background: rgba(239,68,68,.10);
+}
+
+/* ===== Badge ===== */
+.badge{
+  font-size:13px;
+  color:#1b120a;
+  background: linear-gradient(180deg, rgba(241,191,80,1), rgba(241,191,80,.78));
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-weight: 900;
+  border: 1px solid rgba(241,191,80,.25);
+}
+
+/* ===== Table ===== */
+.table{
+  width:100%;
+  border-collapse: collapse;
+}
+.table th, .table td{
+  padding: 12px 12px;
+  border-top: 1px solid rgba(241,191,80,.10);
+  text-align:left;
+  vertical-align: top;
+}
+.table th{
+  color: rgba(231,217,195,.85);
+  font-weight: 700;
+  background: rgba(18,9,7,.35);
+}
+.table tr:hover td{
+  background: rgba(241,191,80,.05);
+}
+
+/* ===== KPI cards ===== */
+.kpi{
+  padding: 14px;
+  border-radius: 16px;
+  border:1px solid rgba(241,191,80,.18);
+  background: rgba(18,9,7,.35);
+}
+.kpi .v{ font-size: 24px; font-weight: 900; margin-top: 4px; }
+.kpi .t{ font-size: var(--font-small); color: var(--muted); }
+
+/* ===== Bottom Nav ===== */
+.bottomNav{
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  padding: 10px 12px;
+  background: rgba(18,9,7,.82);
+  border-top: 1px solid rgba(241,191,80,.14);
+  backdrop-filter: blur(10px);
+}
+.bottomNav .wrap{
+  max-width: 1040px;
+  margin:0 auto;
+  display:flex;
+  gap: 10px;
+}
+.navItem{
+  flex:1;
+  text-align:center;
+  padding: 12px 10px;
+  border-radius: 16px;
+  border:1px solid rgba(241,191,80,.14);
+  background: rgba(42,21,16,.55);
+  color: rgba(255,247,234,.82);
+  font-size: 14px;
+}
+.navItem.active{
+  color:#1b120a;
+  border-color: rgba(241,191,80,.55);
+  background: rgba(241,191,80,.35);
+  font-weight: 900;
+}
+
+/* ===== Messages ===== */
+.msgErr{ color: var(--danger); font-size: 15px; }
+.msgOk{ color: var(--ok); font-size: 15px; }
+.tableWrap{
+  width:100%;
+  overflow-x:auto;
+  overflow-y:auto;
+  max-height: 62vh;           /* scroll Y */
+  border-radius: 16px;
+  -webkit-overflow-scrolling: touch; /* iPhone mượt */
+  border:1px solid rgba(241,191,80,.14);
+}
+
+.table{
+  min-width: 860px;          /* để có scroll X khi màn nhỏ */
+}
+
+@media (max-width: 720px){
+  .tableWrap{ max-height: 58vh; }
+  .table{ min-width: 780px; }
+}
+
+/* ===== Mobile ===== */
+@media (max-width: 720px){
+  .container{ padding-bottom: 104px; }
+  :root{
+    --font-title: 20px;
+    --ctrl-h: 48px; /* mobile bấm dễ hơn */
   }
-}
-
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
 }
