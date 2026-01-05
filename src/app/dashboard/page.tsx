@@ -6,6 +6,7 @@ import Topbar from "@/app/_components/Topbar";
 import BottomNav from "@/app/_components/BottomNav";
 import { supabase } from "@/lib/supabaseClient";
 
+/** ====== date utils ====== */
 function toDateStr(d: Date) {
   return d.toISOString().slice(0, 10);
 }
@@ -33,6 +34,7 @@ function parseMonthStart(ym: string) {
   return new Date(y, m - 1, 1);
 }
 
+/** ====== csv ====== */
 function downloadCSV(filename: string, rows: Record<string, any>[]) {
   if (!rows.length) {
     alert("Không có dữ liệu để xuất.");
@@ -60,6 +62,9 @@ function downloadCSV(filename: string, rows: Record<string, any>[]) {
   URL.revokeObjectURL(url);
 }
 
+/** ====== types ====== */
+type AppRole = "admin" | "sales" | "accountant" | null;
+
 type StockRow = {
   item_id: string;
   name: string;
@@ -82,6 +87,12 @@ type LightOrder = {
 export default function DashboardPage() {
   const now = useMemo(() => new Date(), []);
 
+  /** ✅ auth info */
+  const [authed, setAuthed] = useState(false);
+  const [userEmail, setUserEmail] = useState<string>("");
+  const [role, setRole] = useState<AppRole>(null);
+
+  /** filters */
   const [mode, setMode] = useState<"default" | "day" | "month" | "range">(
     "default"
   );
@@ -90,7 +101,7 @@ export default function DashboardPage() {
   const [from, setFrom] = useState<string>(() => toDateStr(addDays(now, -6)));
   const [to, setTo] = useState<string>(() => toDateStr(now));
 
-  // KPI (Delivered-based revenue)
+  /** KPI */
   const [todayRev, setTodayRev] = useState(0);
   const [todayCogs, setTodayCogs] = useState(0);
   const [todayExp, setTodayExp] = useState(0);
@@ -99,11 +110,12 @@ export default function DashboardPage() {
   const [monthCogs, setMonthCogs] = useState(0);
   const [monthExp, setMonthExp] = useState(0);
 
-  // Filtered KPI
+  /** Filtered KPI */
   const [fRev, setFRev] = useState(0);
   const [fCogs, setFCogs] = useState(0);
   const [fExp, setFExp] = useState(0);
 
+  /** blocks */
   const [lowStock, setLowStock] = useState<StockRow[]>([]);
   const [needCogs, setNeedCogs] = useState<LightOrder[]>([]);
 
@@ -113,6 +125,30 @@ export default function DashboardPage() {
 
   const sum = (arr: any[], key: string) =>
     arr.reduce((s, r) => s + Number(r[key] || 0), 0);
+
+  /**
+   * Dashboard CHI PHÍ:
+   * ✅ Dùng bảng mới expense_invoices (1 bill nhiều dòng)
+   * ✅ Lấy amount_gross (tiền thực trả)
+   * ✅ Filter theo cột date (DATE), không dùng created_at
+   */
+  const fetchExpenseGrossByDateRange = async (
+    startISO: string,
+    endISO: string
+  ) => {
+    const startDate = startISO.slice(0, 10);
+    const endDateExclusive = endISO.slice(0, 10);
+
+    // expense_invoices.date là DATE (yyyy-mm-dd)
+    const res = await supabase
+      .from("expense_invoices")
+      .select("amount_gross")
+      .gte("date", startDate)
+      .lt("date", endDateExclusive);
+
+    if (res.error) alert(res.error.message);
+    return sum(res.data ?? [], "amount_gross");
+  };
 
   const getFilterRange = () => {
     if (mode === "day") {
@@ -152,9 +188,38 @@ export default function DashboardPage() {
     };
   };
 
-  // ✅ Default KPI: hôm nay + tháng này
-  // Revenue = delivered
-  // COGS = completed (vì cogs_total có sau khi chốt)
+  /** ✅ load user + role */
+  const loadUserAndRole = async () => {
+    const { data, error } = await supabase.auth.getUser();
+    if (error || !data.user) {
+      window.location.href = "/login";
+      return;
+    }
+
+    setUserEmail(data.user.email ?? "");
+    setAuthed(true);
+
+    const { data: r, error: rErr } = await supabase
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", data.user.id)
+      .maybeSingle();
+
+    if (rErr) setRole(null);
+    else setRole((r?.role as AppRole) ?? null);
+  };
+
+  const logout = async () => {
+    await supabase.auth.signOut();
+    window.location.href = "/login";
+  };
+
+  /**
+   * ✅ Default KPI: hôm nay + tháng này
+   * - Revenue = delivered (loại cancelled)
+   * - COGS = completed + delivered (vì cogs_total có sau khi chốt)
+   * - Expense = expense_invoices.amount_gross theo cột date
+   */
   const refreshDefault = async () => {
     const n = new Date();
     const todayStart = startOfDay(n);
@@ -165,12 +230,12 @@ export default function DashboardPage() {
     const [
       delToday,
       cogsToday,
-      expToday,
       delMonth,
       cogsMonth,
-      expMonth,
       stock,
       warn,
+      expTodaySum,
+      expMonthSum,
     ] = await Promise.all([
       supabase
         .from("orders")
@@ -189,12 +254,6 @@ export default function DashboardPage() {
         .lt("created_at", todayEnd.toISOString()),
 
       supabase
-        .from("expenses")
-        .select("amount")
-        .gte("created_at", todayStart.toISOString())
-        .lt("created_at", todayEnd.toISOString()),
-
-      supabase
         .from("orders")
         .select("total")
         .eq("delivery_status", "delivered")
@@ -207,12 +266,6 @@ export default function DashboardPage() {
         .select("cogs_total")
         .eq("status", "completed")
         .eq("delivery_status", "delivered")
-        .gte("created_at", mStart.toISOString())
-        .lt("created_at", mEnd.toISOString()),
-
-      supabase
-        .from("expenses")
-        .select("amount")
         .gte("created_at", mStart.toISOString())
         .lt("created_at", mEnd.toISOString()),
 
@@ -230,26 +283,33 @@ export default function DashboardPage() {
         .neq("status", "cancelled")
         .order("created_at", { ascending: false })
         .limit(8),
+
+      // ✅ chi phí hôm nay theo DATE
+      fetchExpenseGrossByDateRange(
+        todayStart.toISOString(),
+        todayEnd.toISOString()
+      ),
+      // ✅ chi phí tháng theo DATE
+      fetchExpenseGrossByDateRange(mStart.toISOString(), mEnd.toISOString()),
     ]);
 
+    // errors
     if (delToday.error) alert(delToday.error.message);
     if (cogsToday.error) alert(cogsToday.error.message);
-    if (expToday.error) alert(expToday.error.message);
     if (delMonth.error) alert(delMonth.error.message);
     if (cogsMonth.error) alert(cogsMonth.error.message);
-    if (expMonth.error) alert(expMonth.error.message);
     if (stock.error) alert(stock.error.message);
     if (warn.error) alert(warn.error.message);
 
     setTodayRev(sum(delToday.data ?? [], "total"));
     setTodayCogs(sum(cogsToday.data ?? [], "cogs_total"));
-    setTodayExp(sum(expToday.data ?? [], "amount"));
+    setTodayExp(expTodaySum);
 
     setMonthRev(sum(delMonth.data ?? [], "total"));
     setMonthCogs(sum(cogsMonth.data ?? [], "cogs_total"));
-    setMonthExp(sum(expMonth.data ?? [], "amount"));
+    setMonthExp(expMonthSum);
 
-    const stockRows = (stock.data as any as StockRow[]) ?? [];
+    const stockRows = ((stock.data as any) ?? []) as StockRow[];
     setLowStock(
       stockRows
         .filter(
@@ -261,14 +321,14 @@ export default function DashboardPage() {
         .slice(0, 12)
     );
 
-    setNeedCogs((warn.data as any) ?? []);
+    setNeedCogs((((warn.data as any) ?? []) as LightOrder[]) ?? []);
   };
 
-  // ✅ Filtered KPI theo bộ lọc (delivered-based)
+  /** ✅ Filtered KPI theo bộ lọc */
   const refreshFiltered = async () => {
     const r = getFilterRange();
 
-    const [del, cogs, exp] = await Promise.all([
+    const [del, cogs, expSum] = await Promise.all([
       supabase
         .from("orders")
         .select("total")
@@ -285,28 +345,24 @@ export default function DashboardPage() {
         .gte("created_at", r.start)
         .lt("created_at", r.end),
 
-      supabase
-        .from("expenses")
-        .select("amount")
-        .gte("created_at", r.start)
-        .lt("created_at", r.end),
+      // ✅ expense theo DATE
+      fetchExpenseGrossByDateRange(r.start, r.end),
     ]);
 
     if (del.error) alert(del.error.message);
     if (cogs.error) alert(cogs.error.message);
-    if (exp.error) alert(exp.error.message);
 
     setFRev(sum(del.data ?? [], "total"));
     setFCogs(sum(cogs.data ?? [], "cogs_total"));
-    setFExp(sum(exp.data ?? [], "amount"));
+    setFExp(expSum);
   };
 
   useEffect(() => {
-    supabase.auth.getUser().then(async ({ data }) => {
-      if (!data.user) return (window.location.href = "/login");
+    (async () => {
+      await loadUserAndRole();
       await refreshDefault();
       await refreshFiltered();
-    });
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -350,21 +406,33 @@ export default function DashboardPage() {
 
   const exportExpenses = async () => {
     const r = getFilterRange();
+    const startDate = r.start.slice(0, 10);
+    const endDateExclusive = r.end.slice(0, 10);
+
     const { data, error } = await supabase
-      .from("expenses")
-      .select("title,amount,expense_type,campaign_id,created_at")
-      .gte("created_at", r.start)
-      .lt("created_at", r.end)
+      .from("expense_invoices")
+      .select(
+        "date,category,channel,vendor,invoice_no,vat_rate,amount_net,vat_amount,amount_gross,note,created_at"
+      )
+      .gte("date", startDate)
+      .lt("date", endDateExclusive)
+      .order("date", { ascending: false })
       .order("created_at", { ascending: false })
       .limit(5000);
 
     if (error) return alert(error.message);
 
     const rows = (data as any[]).map((x) => ({
-      title: x.title,
-      amount: x.amount,
-      expense_type: x.expense_type ?? "",
-      campaign_id: x.campaign_id ?? "",
+      date: x.date,
+      category: x.category,
+      channel: x.channel ?? "",
+      vendor: x.vendor ?? "",
+      invoice_no: x.invoice_no ?? "",
+      vat_rate: x.vat_rate,
+      amount_net: x.amount_net,
+      vat_amount: x.vat_amount,
+      amount_gross: x.amount_gross,
+      note: x.note ?? "",
       created_at: x.created_at,
     }));
 
@@ -373,18 +441,36 @@ export default function DashboardPage() {
 
   const rangeLabel = getFilterRange().label;
 
+  if (!authed) return null;
+
   return (
     <div className="container">
       <Topbar
         title="Dashboard"
         right={
           <>
+            <span className="muted" style={{ fontSize: 13, marginRight: 10 }}>
+              {userEmail ? (
+                <>
+                  <b>{userEmail}</b>
+                  {role ? (
+                    <span className="muted"> • role: {role}</span>
+                  ) : (
+                    <span className="muted"> • role: (chưa gán)</span>
+                  )}
+                </>
+              ) : null}
+            </span>
+
             <button className="btn" onClick={refreshDefault}>
               ↻
             </button>
             <Link className="btn primary" href="/orders/new">
               + Tạo đơn
             </Link>
+            <button className="btn danger" onClick={logout}>
+              Logout
+            </button>
           </>
         }
       />
@@ -396,7 +482,8 @@ export default function DashboardPage() {
             <h2 className="h2">Lọc báo cáo</h2>
             <p className="p">
               * Doanh thu tính theo <b>đã giao (delivered)</b>. COGS tính theo{" "}
-              <b>đã chốt COGS</b>.
+              <b>đã chốt COGS</b>. Chi phí tính theo <b>expense_invoices</b>{" "}
+              (gross) theo <b>ngày date</b>.
             </p>
           </div>
           <span className="badge">{rangeLabel}</span>
@@ -556,6 +643,7 @@ export default function DashboardPage() {
             Mở Orders
           </Link>
         </div>
+
         <div className="card-b" style={{ padding: 0 }}>
           <div className="tableWrap">
             <table className="table">
@@ -586,6 +674,7 @@ export default function DashboardPage() {
                     </td>
                   </tr>
                 ))}
+
                 {needCogs.length === 0 && (
                   <tr>
                     <td colSpan={5} className="muted">
@@ -640,6 +729,7 @@ export default function DashboardPage() {
                     </td>
                   </tr>
                 ))}
+
                 {lowStock.length === 0 && (
                   <tr>
                     <td colSpan={4} className="muted">
