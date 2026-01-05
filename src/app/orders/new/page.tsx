@@ -47,8 +47,8 @@ export default function NewOrderPage() {
     setCustomers((c.data as any) ?? []);
   };
 
-  const fetchItems = async () => {
-    const from = (itemsPage - 1) * itemsPageSize;
+  const fetchItems = async (p = itemsPage, qqInput = itemQ) => {
+    const from = (p - 1) * itemsPageSize;
     const to = from + itemsPageSize - 1;
 
     let query = supabase
@@ -57,7 +57,7 @@ export default function NewOrderPage() {
       .eq("type", "product")
       .eq("is_active", true);
 
-    const qq = itemQ.trim();
+    const qq = qqInput.trim();
     if (qq) query = query.ilike("name", `%${qq}%`);
 
     const { data, count, error } = await query
@@ -73,7 +73,7 @@ export default function NewOrderPage() {
     supabase.auth.getUser().then(async ({ data }) => {
       if (!data.user) return (window.location.href = "/login");
       await fetchCustomers();
-      await fetchItems();
+      await fetchItems(1, itemQ);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -84,17 +84,18 @@ export default function NewOrderPage() {
   }, [itemQ]);
 
   useEffect(() => {
-    fetchItems();
+    fetchItems(itemsPage, itemQ);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [itemsPage, itemQ]);
 
   const addItem = (it: Item) => {
     setLines((prev) => {
       const found = prev.find((l) => l.item_id === it.id);
-      if (found)
+      if (found) {
         return prev.map((l) =>
           l.item_id === it.id ? { ...l, qty: l.qty + 1 } : l
         );
+      }
       return [
         ...prev,
         {
@@ -129,6 +130,7 @@ export default function NewOrderPage() {
   const saveOrder = async () => {
     if (!customerId) return alert("Chọn khách hàng");
     if (lines.length === 0) return alert("Chưa có sản phẩm");
+
     setSaving(true);
 
     const code = "AM" + Date.now().toString().slice(-6);
@@ -142,6 +144,9 @@ export default function NewOrderPage() {
         subtotal: total,
         total,
         status: "new",
+        delivery_status: "pending",
+        payment_status: "unpaid",
+        paid_amount: 0,
       })
       .select("id")
       .single();
@@ -185,6 +190,7 @@ export default function NewOrderPage() {
           <div className="card-h">
             <h2 className="h2">Thông tin</h2>
           </div>
+
           <div className="card-b">
             <div className="field">
               <div className="label">Khách hàng</div>
@@ -322,6 +328,7 @@ export default function NewOrderPage() {
                       </td>
                     </tr>
                   ))}
+
                   {lines.length === 0 && (
                     <tr>
                       <td colSpan={5} className="muted">

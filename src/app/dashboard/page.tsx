@@ -5,7 +5,6 @@ import Link from "next/link";
 import Topbar from "@/app/_components/Topbar";
 import BottomNav from "@/app/_components/BottomNav";
 import { supabase } from "@/lib/supabaseClient";
-import { exportExcel } from "@/lib/exportExcel";
 
 function toDateStr(d: Date) {
   return d.toISOString().slice(0, 10);
@@ -42,7 +41,6 @@ function downloadCSV(filename: string, rows: Record<string, any>[]) {
   const headers = Object.keys(rows[0]);
   const esc = (v: any) => {
     const s = String(v ?? "");
-    // CSV escape
     if (s.includes('"') || s.includes(",") || s.includes("\n")) {
       return `"${s.replaceAll('"', '""')}"`;
     }
@@ -70,21 +68,29 @@ type StockRow = {
   stock_qty: number;
 };
 
+type LightOrder = {
+  id: string;
+  order_code: string;
+  status: "new" | "confirmed" | "completed" | "cancelled";
+  delivery_status: "pending" | "shipped" | "delivered" | "returned" | "failed";
+  payment_status: "unpaid" | "partial" | "paid";
+  total: number;
+  cogs_total: number;
+  created_at: string;
+};
+
 export default function DashboardPage() {
   const now = useMemo(() => new Date(), []);
 
-  // filter mode
   const [mode, setMode] = useState<"default" | "day" | "month" | "range">(
     "default"
   );
-
-  // inputs
   const [day, setDay] = useState<string>(() => toDateStr(now));
   const [month, setMonth] = useState<string>(() => toMonthStr(now));
   const [from, setFrom] = useState<string>(() => toDateStr(addDays(now, -6)));
   const [to, setTo] = useState<string>(() => toDateStr(now));
 
-  // KPI default (today/month)
+  // KPI (Delivered-based revenue)
   const [todayRev, setTodayRev] = useState(0);
   const [todayCogs, setTodayCogs] = useState(0);
   const [todayExp, setTodayExp] = useState(0);
@@ -93,20 +99,21 @@ export default function DashboardPage() {
   const [monthCogs, setMonthCogs] = useState(0);
   const [monthExp, setMonthExp] = useState(0);
 
-  // KPI filtered (theo lựa chọn)
+  // Filtered KPI
   const [fRev, setFRev] = useState(0);
   const [fCogs, setFCogs] = useState(0);
   const [fExp, setFExp] = useState(0);
 
   const [lowStock, setLowStock] = useState<StockRow[]>([]);
-  const [showAllLow, setShowAllLow] = useState(false);
+  const [needCogs, setNeedCogs] = useState<LightOrder[]>([]);
 
   const todayNet = todayRev - todayCogs - todayExp;
   const monthNet = monthRev - monthCogs - monthExp;
-
   const filteredNet = fRev - fCogs - fExp;
 
-  // helper lấy khoảng thời gian filter
+  const sum = (arr: any[], key: string) =>
+    arr.reduce((s, r) => s + Number(r[key] || 0), 0);
+
   const getFilterRange = () => {
     if (mode === "day") {
       const d = new Date(day);
@@ -129,14 +136,13 @@ export default function DashboardPage() {
     }
     if (mode === "range") {
       const s = startOfDay(new Date(from));
-      const e = addDays(startOfDay(new Date(to)), 1); // inclusive end day
+      const e = addDays(startOfDay(new Date(to)), 1);
       return {
         start: s.toISOString(),
         end: e.toISOString(),
         label: `Từ ${from} đến ${to}`,
       };
     }
-    // default: dùng range 7 ngày gần nhất cho “filtered block”
     const s = startOfDay(addDays(new Date(), -6));
     const e = addDays(startOfDay(new Date()), 1);
     return {
@@ -146,9 +152,9 @@ export default function DashboardPage() {
     };
   };
 
-  const sum = (arr: any[], key: string) =>
-    arr.reduce((s, r) => s + Number(r[key] || 0), 0);
-
+  // ✅ Default KPI: hôm nay + tháng này
+  // Revenue = delivered
+  // COGS = completed (vì cogs_total có sau khi chốt)
   const refreshDefault = async () => {
     const n = new Date();
     const todayStart = startOfDay(n);
@@ -156,47 +162,92 @@ export default function DashboardPage() {
     const mStart = startOfMonth(n);
     const mEnd = nextMonth(mStart);
 
-    const [oToday, oMonth, eToday, eMonth, stock] = await Promise.all([
+    const [
+      delToday,
+      cogsToday,
+      expToday,
+      delMonth,
+      cogsMonth,
+      expMonth,
+      stock,
+      warn,
+    ] = await Promise.all([
       supabase
         .from("orders")
-        .select("total,cogs_total")
-        .eq("status", "completed")
+        .select("total")
+        .eq("delivery_status", "delivered")
+        .neq("status", "cancelled")
         .gte("created_at", todayStart.toISOString())
         .lt("created_at", todayEnd.toISOString()),
+
       supabase
         .from("orders")
-        .select("total,cogs_total")
+        .select("cogs_total")
         .eq("status", "completed")
-        .gte("created_at", mStart.toISOString())
-        .lt("created_at", mEnd.toISOString()),
+        .eq("delivery_status", "delivered")
+        .gte("created_at", todayStart.toISOString())
+        .lt("created_at", todayEnd.toISOString()),
+
       supabase
         .from("expenses")
         .select("amount")
         .gte("created_at", todayStart.toISOString())
         .lt("created_at", todayEnd.toISOString()),
+
+      supabase
+        .from("orders")
+        .select("total")
+        .eq("delivery_status", "delivered")
+        .neq("status", "cancelled")
+        .gte("created_at", mStart.toISOString())
+        .lt("created_at", mEnd.toISOString()),
+
+      supabase
+        .from("orders")
+        .select("cogs_total")
+        .eq("status", "completed")
+        .eq("delivery_status", "delivered")
+        .gte("created_at", mStart.toISOString())
+        .lt("created_at", mEnd.toISOString()),
+
       supabase
         .from("expenses")
         .select("amount")
         .gte("created_at", mStart.toISOString())
         .lt("created_at", mEnd.toISOString()),
+
       supabase
         .from("v_stock")
         .select("item_id,name,unit,low_stock_threshold,stock_qty"),
+
+      supabase
+        .from("orders")
+        .select(
+          "id,order_code,status,delivery_status,payment_status,total,cogs_total,created_at"
+        )
+        .eq("delivery_status", "delivered")
+        .neq("status", "completed")
+        .neq("status", "cancelled")
+        .order("created_at", { ascending: false })
+        .limit(8),
     ]);
 
-    if (oToday.error) alert(oToday.error.message);
-    if (oMonth.error) alert(oMonth.error.message);
-    if (eToday.error) alert(eToday.error.message);
-    if (eMonth.error) alert(eMonth.error.message);
+    if (delToday.error) alert(delToday.error.message);
+    if (cogsToday.error) alert(cogsToday.error.message);
+    if (expToday.error) alert(expToday.error.message);
+    if (delMonth.error) alert(delMonth.error.message);
+    if (cogsMonth.error) alert(cogsMonth.error.message);
+    if (expMonth.error) alert(expMonth.error.message);
     if (stock.error) alert(stock.error.message);
+    if (warn.error) alert(warn.error.message);
 
-    setTodayRev(sum(oToday.data ?? [], "total"));
-    setTodayCogs(sum(oToday.data ?? [], "cogs_total"));
-    setTodayExp(sum(eToday.data ?? [], "amount"));
+    setTodayRev(sum(delToday.data ?? [], "total"));
+    setTodayCogs(sum(cogsToday.data ?? [], "cogs_total"));
+    setTodayExp(sum(expToday.data ?? [], "amount"));
 
-    setMonthRev(sum(oMonth.data ?? [], "total"));
-    setMonthCogs(sum(oMonth.data ?? [], "cogs_total"));
-    setMonthExp(sum(eMonth.data ?? [], "amount"));
+    setMonthRev(sum(delMonth.data ?? [], "total"));
+    setMonthCogs(sum(cogsMonth.data ?? [], "cogs_total"));
+    setMonthExp(sum(expMonth.data ?? [], "amount"));
 
     const stockRows = (stock.data as any as StockRow[]) ?? [];
     setLowStock(
@@ -209,18 +260,31 @@ export default function DashboardPage() {
         .sort((a, b) => Number(a.stock_qty) - Number(b.stock_qty))
         .slice(0, 12)
     );
+
+    setNeedCogs((warn.data as any) ?? []);
   };
 
+  // ✅ Filtered KPI theo bộ lọc (delivered-based)
   const refreshFiltered = async () => {
     const r = getFilterRange();
 
-    const [o, e] = await Promise.all([
+    const [del, cogs, exp] = await Promise.all([
       supabase
         .from("orders")
-        .select("total,cogs_total")
-        .eq("status", "completed")
+        .select("total")
+        .eq("delivery_status", "delivered")
+        .neq("status", "cancelled")
         .gte("created_at", r.start)
         .lt("created_at", r.end),
+
+      supabase
+        .from("orders")
+        .select("cogs_total")
+        .eq("status", "completed")
+        .eq("delivery_status", "delivered")
+        .gte("created_at", r.start)
+        .lt("created_at", r.end),
+
       supabase
         .from("expenses")
         .select("amount")
@@ -228,12 +292,13 @@ export default function DashboardPage() {
         .lt("created_at", r.end),
     ]);
 
-    if (o.error) alert(o.error.message);
-    if (e.error) alert(e.error.message);
+    if (del.error) alert(del.error.message);
+    if (cogs.error) alert(cogs.error.message);
+    if (exp.error) alert(exp.error.message);
 
-    setFRev(sum(o.data ?? [], "total"));
-    setFCogs(sum(o.data ?? [], "cogs_total"));
-    setFExp(sum(e.data ?? [], "amount"));
+    setFRev(sum(del.data ?? [], "total"));
+    setFCogs(sum(cogs.data ?? [], "cogs_total"));
+    setFExp(sum(exp.data ?? [], "amount"));
   };
 
   useEffect(() => {
@@ -245,59 +310,57 @@ export default function DashboardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    if (mode === "range" && from > to) return;
-    refreshFiltered();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, day, month, from, to]);
-
   const applyFilter = async () => {
-    // validate range
     if (mode === "range" && from > to)
       return alert("Khoảng ngày không hợp lệ (from > to).");
     await refreshFiltered();
   };
 
-  const exportReportExcel = async () => {
+  const exportOrders = async () => {
     const r = getFilterRange();
+    const { data, error } = await supabase
+      .from("orders")
+      .select(
+        "order_code,status,channel,delivery_status,payment_status,paid_amount,total,cogs_total,gross_profit,created_at,customers(name,phone)"
+      )
+      .gte("created_at", r.start)
+      .lt("created_at", r.end)
+      .order("created_at", { ascending: false })
+      .limit(5000);
 
-    const [o, e] = await Promise.all([
-      supabase
-        .from("orders")
-        .select(
-          "order_code,status,channel,total,cogs_total,gross_profit,created_at,customers(name,phone,address)"
-        )
-        .gte("created_at", r.start)
-        .lt("created_at", r.end)
-        .order("created_at", { ascending: false })
-        .limit(5000),
+    if (error) return alert(error.message);
 
-      supabase
-        .from("expenses")
-        .select("title,amount,expense_type,campaign_id,created_at")
-        .gte("created_at", r.start)
-        .lt("created_at", r.end)
-        .order("created_at", { ascending: false })
-        .limit(5000),
-    ]);
-
-    if (o.error) return alert(o.error.message);
-    if (e.error) return alert(e.error.message);
-
-    const ordersRows = (o.data as any[]).map((x) => ({
+    const rows = (data as any[]).map((x) => ({
       order_code: x.order_code,
       status: x.status,
+      delivery_status: x.delivery_status,
+      payment_status: x.payment_status,
+      paid_amount: x.paid_amount,
       channel: x.channel,
       customer_name: x.customers?.name ?? "",
       customer_phone: x.customers?.phone ?? "",
-      customer_address: x.customers?.address ?? "",
       total: x.total,
       cogs_total: x.cogs_total,
       gross_profit: x.gross_profit,
       created_at: x.created_at,
     }));
 
-    const expensesRows = (e.data as any[]).map((x) => ({
+    downloadCSV(`orders_${r.label.replaceAll(" ", "_")}.csv`, rows);
+  };
+
+  const exportExpenses = async () => {
+    const r = getFilterRange();
+    const { data, error } = await supabase
+      .from("expenses")
+      .select("title,amount,expense_type,campaign_id,created_at")
+      .gte("created_at", r.start)
+      .lt("created_at", r.end)
+      .order("created_at", { ascending: false })
+      .limit(5000);
+
+    if (error) return alert(error.message);
+
+    const rows = (data as any[]).map((x) => ({
       title: x.title,
       amount: x.amount,
       expense_type: x.expense_type ?? "",
@@ -305,11 +368,7 @@ export default function DashboardPage() {
       created_at: x.created_at,
     }));
 
-    const safeLabel = r.label.replaceAll(" ", "_").replaceAll("/", "-");
-    exportExcel(`amora_report_${safeLabel}.xlsx`, {
-      Orders: ordersRows,
-      Expenses: expensesRows,
-    });
+    downloadCSV(`expenses_${r.label.replaceAll(" ", "_")}.csv`, rows);
   };
 
   const rangeLabel = getFilterRange().label;
@@ -323,7 +382,7 @@ export default function DashboardPage() {
             <button className="btn" onClick={refreshDefault}>
               ↻
             </button>
-            <Link className="btn" href="/orders/new">
+            <Link className="btn primary" href="/orders/new">
               + Tạo đơn
             </Link>
           </>
@@ -336,8 +395,8 @@ export default function DashboardPage() {
           <div>
             <h2 className="h2">Lọc báo cáo</h2>
             <p className="p">
-              Mặc định vẫn hiển thị “Hôm nay” và “Tháng này”. Phần dưới là theo
-              bộ lọc.
+              * Doanh thu tính theo <b>đã giao (delivered)</b>. COGS tính theo{" "}
+              <b>đã chốt COGS</b>.
             </p>
           </div>
           <span className="badge">{rangeLabel}</span>
@@ -349,7 +408,7 @@ export default function DashboardPage() {
               className="select"
               value={mode}
               onChange={(e) => setMode(e.target.value as any)}
-              style={{ maxWidth: 190 }}
+              style={{ maxWidth: 210 }}
             >
               <option value="default">7 ngày gần nhất</option>
               <option value="day">Theo ngày</option>
@@ -408,21 +467,24 @@ export default function DashboardPage() {
               Áp dụng
             </button>
 
-            <button className="btn" onClick={exportReportExcel}>
-              Xuất Excel (Orders + Expenses)
+            <button className="btn" onClick={exportOrders}>
+              Xuất Orders CSV
+            </button>
+            <button className="btn" onClick={exportExpenses}>
+              Xuất Expenses CSV
             </button>
           </div>
         </div>
       </div>
 
-      {/* DEFAULT KPI: TODAY */}
+      {/* DEFAULT KPI */}
       <div className="grid" style={{ marginTop: 14 }}>
         <div className="kpi" style={{ gridColumn: "span 3" }}>
-          <div className="t">Doanh thu hôm nay</div>
+          <div className="t">Doanh thu hôm nay (đã giao)</div>
           <div className="v">{todayRev.toLocaleString()}</div>
         </div>
         <div className="kpi" style={{ gridColumn: "span 3" }}>
-          <div className="t">Giá vốn hôm nay</div>
+          <div className="t">COGS hôm nay (đã chốt)</div>
           <div className="v">{todayCogs.toLocaleString()}</div>
         </div>
         <div className="kpi" style={{ gridColumn: "span 3" }}>
@@ -434,13 +496,12 @@ export default function DashboardPage() {
           <div className="v">{todayNet.toLocaleString()}</div>
         </div>
 
-        {/* DEFAULT KPI: MONTH */}
         <div className="kpi" style={{ gridColumn: "span 3" }}>
-          <div className="t">Doanh thu tháng</div>
+          <div className="t">Doanh thu tháng (đã giao)</div>
           <div className="v">{monthRev.toLocaleString()}</div>
         </div>
         <div className="kpi" style={{ gridColumn: "span 3" }}>
-          <div className="t">Giá vốn tháng</div>
+          <div className="t">COGS tháng (đã chốt)</div>
           <div className="v">{monthCogs.toLocaleString()}</div>
         </div>
         <div className="kpi" style={{ gridColumn: "span 3" }}>
@@ -457,7 +518,9 @@ export default function DashboardPage() {
       <div className="card" style={{ marginTop: 14 }}>
         <div className="card-h">
           <h2 className="h2">Theo bộ lọc: {rangeLabel}</h2>
-          <span className="muted">Doanh thu - Giá vốn - Chi phí</span>
+          <span className="muted">
+            Doanh thu (đã giao) - COGS (đã chốt) - Chi phí
+          </span>
         </div>
         <div className="grid card-b">
           <div className="kpi" style={{ gridColumn: "span 4" }}>
@@ -465,7 +528,7 @@ export default function DashboardPage() {
             <div className="v">{fRev.toLocaleString()}</div>
           </div>
           <div className="kpi" style={{ gridColumn: "span 4" }}>
-            <div className="t">Giá vốn (COGS)</div>
+            <div className="t">COGS</div>
             <div className="v">{fCogs.toLocaleString()}</div>
           </div>
           <div className="kpi" style={{ gridColumn: "span 4" }}>
@@ -476,6 +539,62 @@ export default function DashboardPage() {
           <div className="kpi" style={{ gridColumn: "span 12" }}>
             <div className="t">Lợi nhuận ròng</div>
             <div className="v">{filteredNet.toLocaleString()}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* WARN: delivered but not completed */}
+      <div className="card" style={{ marginTop: 14 }}>
+        <div className="card-h">
+          <div>
+            <h2 className="h2">Cảnh báo vận hành</h2>
+            <p className="p">
+              Đơn <b>đã giao</b> nhưng <b>chưa chốt COGS</b> (COGS sẽ bị thiếu).
+            </p>
+          </div>
+          <Link className="btn primary" href="/orders">
+            Mở Orders
+          </Link>
+        </div>
+        <div className="card-b" style={{ padding: 0 }}>
+          <div className="tableWrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Mã</th>
+                  <th>Status</th>
+                  <th>Thanh toán</th>
+                  <th className="right">Doanh thu</th>
+                  <th className="right">Tạo lúc</th>
+                </tr>
+              </thead>
+              <tbody>
+                {needCogs.map((o) => (
+                  <tr key={o.id}>
+                    <td>
+                      <Link href={`/orders/${o.id}`}>
+                        <b>{o.order_code}</b>
+                      </Link>
+                    </td>
+                    <td className="muted">{o.status}</td>
+                    <td className="muted">{o.payment_status}</td>
+                    <td className="right">
+                      {Number(o.total || 0).toLocaleString()}
+                    </td>
+                    <td className="right">
+                      {new Date(o.created_at).toLocaleString()}
+                    </td>
+                  </tr>
+                ))}
+                {needCogs.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="muted">
+                      Không có 🎉
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
       </div>

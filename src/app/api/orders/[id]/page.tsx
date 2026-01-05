@@ -5,7 +5,11 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import BottomNav from "@/app/_components/BottomNav";
 import { supabase } from "@/lib/supabaseClient";
-import { getMyRole, type AppRole } from "@/lib/getRole";
+import { getMyRole } from "@/lib/getRole";
+import type { AppRole } from "@/lib/roles";
+
+type DeliveryStatus = "pending" | "shipping" | "delivered" | "returned";
+type PaymentStatus = "unpaid" | "paid" | "partial" | "refunded";
 
 type Order = {
   id: string;
@@ -16,13 +20,9 @@ type Order = {
   total: number;
   cogs_total: number;
   gross_profit: number;
+  delivery_status: DeliveryStatus;
+  payment_status: PaymentStatus;
   created_at: string;
-
-  delivery_status: "pending" | "shipped" | "delivered" | "returned" | "failed";
-  payment_status: "unpaid" | "partial" | "paid";
-  paid_amount: number;
-  paid_at: string | null;
-
   customers?: {
     name: string;
     phone: string | null;
@@ -36,27 +36,6 @@ type Line = {
   unit_price: number;
   line_total: number;
   items?: { name: string; unit: string } | null;
-};
-
-const statusLabel: Record<Order["status"], string> = {
-  new: "Mới",
-  confirmed: "Xác nhận",
-  completed: "Đã chốt COGS",
-  cancelled: "Huỷ",
-};
-
-const deliveryLabel: Record<Order["delivery_status"], string> = {
-  pending: "Chưa giao",
-  shipped: "Đang giao",
-  delivered: "Đã giao",
-  returned: "Hoàn",
-  failed: "Thất bại",
-};
-
-const paymentLabel: Record<Order["payment_status"], string> = {
-  unpaid: "Chưa thu",
-  partial: "Thu 1 phần",
-  paid: "Đã thu",
 };
 
 export default function OrderDetailPage() {
@@ -77,7 +56,7 @@ export default function OrderDetailPage() {
     const { data: o, error: oErr } = await supabase
       .from("orders")
       .select(
-        "id,order_code,status,channel,subtotal,total,cogs_total,gross_profit,created_at,delivery_status,payment_status,paid_amount,paid_at,customers(name,phone,address)"
+        "id,order_code,status,channel,subtotal,total,cogs_total,gross_profit,delivery_status,payment_status,created_at,customers(name,phone,address)"
       )
       .eq("id", id)
       .single();
@@ -103,72 +82,43 @@ export default function OrderDetailPage() {
     });
   }, []);
 
-  const updateDelivery = async (next: Order["delivery_status"]) => {
-    if (!order) return;
-    setLoading(true);
-    const { error } = await supabase
-      .from("orders")
-      .update({ delivery_status: next })
-      .eq("id", id);
-    setLoading(false);
-    if (error) return alert(error.message);
-    await refresh();
-  };
+  const canEdit = role === "admin" || role === "sales";
 
-  const updatePayment = async (
-    next: Order["payment_status"],
-    paidAmount?: number
+  const updateOrderMeta = async (
+    patch: Partial<Pick<Order, "delivery_status" | "payment_status">>
   ) => {
-    if (!order) return;
-    setLoading(true);
-
-    const patch: any = { payment_status: next };
-
-    if (typeof paidAmount === "number") patch.paid_amount = paidAmount;
-
-    if (next === "paid") patch.paid_at = new Date().toISOString();
-    if (next !== "paid") patch.paid_at = null;
-
+    if (!canEdit) return alert("Bạn không có quyền sửa đơn.");
     const { error } = await supabase.from("orders").update(patch).eq("id", id);
-
-    setLoading(false);
     if (error) return alert(error.message);
     await refresh();
   };
 
   const complete = async () => {
-    if (!confirm("Chốt COGS + trừ kho FIFO cho đơn này?")) return;
+    if (!confirm("Hoàn tất đơn? (trừ kho FIFO + tính COGS)")) return;
     setLoading(true);
-
     const res = await fetch("/api/orders/complete", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ orderId: id }),
     });
-
-    const json = await res.json().catch(() => ({}));
+    const json = await res.json();
     setLoading(false);
-
-    if (!res.ok) return alert((json as any)?.error || "Lỗi complete");
+    if (!res.ok) return alert(json.error || "Lỗi complete");
     await refresh();
   };
 
   const cancel = async () => {
     if (role !== "admin") return alert("Chỉ admin mới được huỷ + hoàn kho.");
     if (!confirm("HUỶ và HOÀN KHO?")) return;
-
     setLoading(true);
-
     const res = await fetch("/api/orders/cancel", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ orderId: id }),
     });
-
-    const json = await res.json().catch(() => ({}));
+    const json = await res.json();
     setLoading(false);
-
-    if (!res.ok) return alert((json as any)?.error || "Lỗi cancel");
+    if (!res.ok) return alert(json.error || "Lỗi cancel");
     await refresh();
   };
 
@@ -185,7 +135,9 @@ export default function OrderDetailPage() {
           </Link>
         </div>
         <div className="card" style={{ marginTop: 14 }}>
-          <div className="card-b muted">Đang tải...</div>
+          <div className="card-b" style={{ color: "#9ca3af" }}>
+            Đang tải...
+          </div>
         </div>
         <BottomNav />
       </div>
@@ -197,24 +149,21 @@ export default function OrderDetailPage() {
       <div className="topbar">
         <div className="brand">
           <span>Đơn {order.order_code}</span>
-          <span className="badge">{statusLabel[order.status]}</span>
+          <span className="badge">{order.status}</span>
         </div>
-
         <div className="row">
           <Link className="btn" href="/orders">
             ← Danh sách
           </Link>
-
           {order.status !== "completed" && order.status !== "cancelled" && (
             <button
               className="btn primary"
               onClick={complete}
               disabled={loading}
             >
-              {loading ? "..." : "Chốt COGS"}
+              {loading ? "..." : "Hoàn tất"}
             </button>
           )}
-
           {order.status === "completed" && (
             <button
               className="btn danger"
@@ -228,113 +177,77 @@ export default function OrderDetailPage() {
       </div>
 
       <div className="grid" style={{ marginTop: 14 }}>
-        {/* LEFT */}
         <div className="card" style={{ gridColumn: "span 5" }}>
           <div className="card-h">
             <h2 className="h2">Khách hàng</h2>
           </div>
-
           <div className="card-b">
             <div>
               <b>{order.customers?.name ?? "-"}</b>
             </div>
             <div className="muted">{order.customers?.phone ?? ""}</div>
             <div className="muted">{order.customers?.address ?? ""}</div>
-
             <div style={{ marginTop: 10 }} className="muted">
               Kênh: <b>{order.channel}</b>
             </div>
 
-            <div style={{ marginTop: 12 }}>
-              <div className="label">Giao hàng</div>
-              <select
-                className="select"
-                value={order.delivery_status}
-                disabled={loading || order.status === "cancelled"}
-                onChange={(e) => updateDelivery(e.target.value as any)}
-              >
-                <option value="pending">{deliveryLabel.pending}</option>
-                <option value="shipped">{deliveryLabel.shipped}</option>
-                <option value="delivered">{deliveryLabel.delivered}</option>
-                <option value="returned">{deliveryLabel.returned}</option>
-                <option value="failed">{deliveryLabel.failed}</option>
-              </select>
+            <div className="grid" style={{ marginTop: 12 }}>
+              <div className="field" style={{ gridColumn: "span 6" }}>
+                <div className="label">Giao hàng</div>
+                <select
+                  className="select"
+                  value={order.delivery_status}
+                  disabled={!canEdit}
+                  onChange={(e) =>
+                    updateOrderMeta({
+                      delivery_status: e.target.value as DeliveryStatus,
+                    })
+                  }
+                >
+                  <option value="pending">Chờ</option>
+                  <option value="shipping">Đang giao</option>
+                  <option value="delivered">Đã giao</option>
+                  <option value="returned">Hoàn/Trả</option>
+                </select>
+              </div>
 
-              {order.delivery_status === "delivered" &&
-                order.status !== "completed" && (
-                  <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
-                    ⚠ Đã giao nhưng chưa chốt COGS (nên bấm “Chốt COGS”)
-                  </div>
-                )}
-            </div>
-
-            <div style={{ marginTop: 12 }}>
-              <div className="label">Thanh toán</div>
-
-              <select
-                className="select"
-                value={order.payment_status}
-                disabled={loading || order.status === "cancelled"}
-                onChange={(e) => updatePayment(e.target.value as any)}
-              >
-                <option value="unpaid">{paymentLabel.unpaid}</option>
-                <option value="partial">{paymentLabel.partial}</option>
-                <option value="paid">{paymentLabel.paid}</option>
-              </select>
-
-              {order.payment_status === "partial" && (
-                <div style={{ marginTop: 8 }}>
-                  <div className="label">Đã thu</div>
-                  <input
-                    className="input"
-                    type="number"
-                    value={Number(order.paid_amount || 0)}
-                    onChange={(e) =>
-                      setOrder((prev) =>
-                        prev
-                          ? {
-                              ...prev,
-                              paid_amount: Number(e.target.value || 0),
-                            }
-                          : prev
-                      )
-                    }
-                    onBlur={(e) =>
-                      updatePayment("partial", Number(e.target.value || 0))
-                    }
-                    placeholder="Nhập số tiền đã thu"
-                    disabled={loading || order.status === "cancelled"}
-                  />
-                </div>
-              )}
-
-              <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
-                {order.payment_status === "paid"
-                  ? `Đã thu • ${
-                      order.paid_at
-                        ? new Date(order.paid_at).toLocaleString()
-                        : ""
-                    }`
-                  : order.payment_status === "partial"
-                  ? `Thu ${Number(order.paid_amount || 0).toLocaleString()}`
-                  : "Chưa thu"}
+              <div className="field" style={{ gridColumn: "span 6" }}>
+                <div className="label">Thanh toán</div>
+                <select
+                  className="select"
+                  value={order.payment_status}
+                  disabled={!canEdit}
+                  onChange={(e) =>
+                    updateOrderMeta({
+                      payment_status: e.target.value as PaymentStatus,
+                    })
+                  }
+                >
+                  <option value="unpaid">Chưa thu</option>
+                  <option value="paid">Đã thu</option>
+                  <option value="partial">Thu 1 phần</option>
+                  <option value="refunded">Hoàn tiền</option>
+                </select>
               </div>
             </div>
+
+            {!canEdit && (
+              <div className="muted" style={{ marginTop: 8, fontSize: 13 }}>
+                Bạn chỉ có quyền xem.
+              </div>
+            )}
           </div>
         </div>
 
-        {/* RIGHT */}
         <div className="card" style={{ gridColumn: "span 7" }}>
           <div className="card-h">
             <h2 className="h2">Tổng kết</h2>
           </div>
-
           <div className="card-b">
             <div className="row" style={{ justifyContent: "space-between" }}>
               <span className="muted">Doanh thu</span>
               <b>{Number(order.total || 0).toLocaleString()}</b>
             </div>
-
             <div
               className="row"
               style={{ justifyContent: "space-between", marginTop: 8 }}
@@ -342,7 +255,6 @@ export default function OrderDetailPage() {
               <span className="muted">Giá vốn (COGS)</span>
               <b>{Number(order.cogs_total || 0).toLocaleString()}</b>
             </div>
-
             <div
               className="row"
               style={{ justifyContent: "space-between", marginTop: 8 }}
@@ -350,19 +262,13 @@ export default function OrderDetailPage() {
               <span className="muted">Lãi gộp</span>
               <b>{profit.toLocaleString()}</b>
             </div>
-
-            <div className="muted" style={{ marginTop: 10, fontSize: 12 }}>
-              * “COGS” chỉ chính xác sau khi bấm “Chốt COGS”.
-            </div>
           </div>
         </div>
 
-        {/* LINES */}
         <div className="card" style={{ gridColumn: "span 12" }}>
           <div className="card-h">
             <h2 className="h2">Chi tiết sản phẩm</h2>
           </div>
-
           <div className="card-b" style={{ padding: 0 }}>
             <div className="tableWrap">
               <table className="table">
@@ -394,7 +300,6 @@ export default function OrderDetailPage() {
                       </td>
                     </tr>
                   ))}
-
                   {lines.length === 0 && (
                     <tr>
                       <td colSpan={4} className="muted">

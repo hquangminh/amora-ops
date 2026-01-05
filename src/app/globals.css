@@ -1,13 +1,13 @@
 :root{
   /* ===== Amora Brand ===== */
-  --brand:#F1BF50;   /* vàng Amora */
-  --brand2:#3C1F1A;  /* nâu Amora */
+  --brand:#F1BF50;
+  --brand2:#3C1F1A;
 
-  /* ===== Theme (ấm - nâu, không đen xanh) ===== */
+  /* ===== Theme ===== */
   --bg:#120907;
-  --panel: rgba(42,21,16,.78);    /* nâu kính */
-  --panel2: rgba(26,15,12,.68);   /* nâu tối */
-  --text:#fff7ea;                /* ngà sáng dễ đọc */
+  --panel: rgba(42,21,16,.78);
+  --panel2: rgba(26,15,12,.68);
+  --text:#fff7ea;
   --muted:#e7d9c3;
   --line: rgba(241,191,80,.22);
 
@@ -17,11 +17,11 @@
   --shadow: 0 14px 40px rgba(0,0,0,.38);
   --radius: 18px;
 
-  /* Người lớn tuổi: scale */
+  /* người lớn tuổi */
   --font-base: 16px;
   --font-small: 14px;
   --font-title: 22px;
-  --ctrl-h: 46px; /* chiều cao input/button */
+  --ctrl-h: 46px;
 
   /* Bottom nav height (để chừa padding dưới) */
   --bottom-nav-h: 76px;
@@ -29,14 +29,11 @@
 
 *{ box-sizing:border-box; }
 
-/* ===== MOBILE SCROLL FIX (global) =====
-   - Tránh kéo xuống lộ trắng
-   - Tránh bị “kẹt scroll” do height:100% */
-html, body{
+html{
   height: auto;
   min-height: 100%;
-  background: #120907;          /* fallback nền */
-  overscroll-behavior-y: none;  /* giảm rubber band */
+  background: var(--bg); /* chống lộ trắng */
+  overscroll-behavior-y: none;
 }
 
 body{
@@ -46,17 +43,16 @@ body{
   font-size: var(--font-base);
 
   min-height: 100vh;
-  min-height: 100svh; /* chuẩn mobile mới */
+  min-height: 100svh;
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
 
-  /* Nền nâu ấm + ánh vàng Amora */
   background:
     radial-gradient(900px 520px at 18% 0%, rgba(241,191,80,.18), transparent 60%),
     radial-gradient(800px 520px at 88% 18%, rgba(60,31,26,.55), transparent 60%),
     radial-gradient(1200px 800px at 50% 110%, rgba(241,191,80,.10), transparent 55%),
     linear-gradient(180deg, #1a0f0c, var(--bg) 70%);
-  background-color: #120907; /* fallback để không lộ trắng */
+  background-color: var(--bg);
 }
 
 a{ color:inherit; text-decoration:none; }
@@ -65,7 +61,8 @@ a:hover{ opacity:.92; }
 .container{
   max-width: 1040px;
   margin: 0 auto;
-  padding: 18px 16px calc(var(--bottom-nav-h) + 24px);
+  /* chừa chỗ cho bottom nav + safe area */
+  padding: 18px 16px calc(var(--bottom-nav-h) + 24px + env(safe-area-inset-bottom));
 }
 
 /* ===== Topbar / Card ===== */
@@ -83,7 +80,9 @@ a:hover{ opacity:.92; }
 }
 
 .brand{
-  display:flex; align-items:center; gap:12px;
+  display:flex;
+  align-items:center;
+  gap:12px;
   font-weight: 800;
   letter-spacing: .2px;
 }
@@ -107,9 +106,10 @@ a:hover{ opacity:.92; }
 
 .card-b{ padding: 14px; }
 
-/* ===== Typography (dễ nhìn) ===== */
+/* ===== Typography ===== */
 .h1{ font-size: var(--font-title); margin: 0; font-weight: 900; }
 .h2{ font-size: 18px; margin: 0; font-weight: 800; }
+
 .p{
   color: var(--muted);
   margin: 8px 0 0;
@@ -127,7 +127,7 @@ a:hover{ opacity:.92; }
   gap:10px;
 }
 
-/* ===== Form controls (to + rõ) ===== */
+/* ===== Form controls ===== */
 .label{
   font-size: var(--font-small);
   color: var(--muted);
@@ -147,6 +147,7 @@ a:hover{ opacity:.92; }
   outline:none;
   font-size: 16px;
 }
+
 .input::placeholder{ color: rgba(231,217,195,.65); }
 
 .input:focus, .select:focus{
@@ -165,6 +166,7 @@ a:hover{ opacity:.92; }
   cursor:pointer;
   font-size: 16px;
 }
+
 .btn:hover{ border-color: rgba(241,191,80,.60); }
 .btn:disabled{ opacity:.6; cursor:not-allowed; }
 
@@ -191,21 +193,22 @@ a:hover{ opacity:.92; }
   border: 1px solid rgba(241,191,80,.25);
 }
 
-/* ===== Table + Scroll Wrapper ===== */
+/* ===== Table + wrapper =====
+   QUAN TRỌNG: chỉ scroll ngang (X). Scroll dọc để BODY tự scroll.
+   -> Fix iPhone kẹt scroll + kéo xuống trắng */
 .tableWrap{
   width:100%;
   max-width: 100%;
-  overflow: auto;                 /* X + Y */
-  max-height: 62vh;               /* scroll Y trong khung */
+  overflow-x:auto;
+  overflow-y: visible;
+  -webkit-overflow-scrolling: touch;
   border-radius: 16px;
-  -webkit-overflow-scrolling: touch; /* iPhone mượt */
-  overscroll-behavior: contain;
   border:1px solid rgba(241,191,80,.14);
 }
 
 .table{
   width:100%;
-  min-width: 860px;              /* để có scroll X khi màn nhỏ */
+  min-width: 860px;
   border-collapse: collapse;
 }
 
@@ -215,16 +218,18 @@ a:hover{ opacity:.92; }
   text-align:left;
   vertical-align: top;
 }
+
 .table th{
   color: rgba(231,217,195,.85);
   font-weight: 700;
   background: rgba(18,9,7,.35);
 }
+
 .table tr:hover td{
   background: rgba(241,191,80,.05);
 }
 
-/* ===== KPI cards ===== */
+/* ===== KPI ===== */
 .kpi{
   padding: 14px;
   border-radius: 16px;
@@ -238,10 +243,11 @@ a:hover{ opacity:.92; }
 .bottomNav{
   position: fixed;
   left: 0; right: 0; bottom: 0;
-  padding: 10px 12px;
+  padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
   background: rgba(18,9,7,.82);
   border-top: 1px solid rgba(241,191,80,.14);
   backdrop-filter: blur(10px);
+  z-index: 50;
 }
 
 .bottomNav .wrap{
@@ -249,10 +255,15 @@ a:hover{ opacity:.92; }
   margin:0 auto;
   display:flex;
   gap: 10px;
+
+  /* cho phép cuộn ngang nếu nhiều menu */
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .navItem{
-  flex:1;
+  flex:0 0 auto;           /* không ép chia đều -> đỡ bé chữ */
+  min-width: 92px;
   text-align:center;
   padding: 12px 10px;
   border-radius: 16px;
@@ -260,6 +271,7 @@ a:hover{ opacity:.92; }
   background: rgba(42,21,16,.55);
   color: rgba(255,247,234,.82);
   font-size: 14px;
+  white-space: nowrap;
 }
 
 .navItem.active{
@@ -278,17 +290,12 @@ a:hover{ opacity:.92; }
   :root{
     --font-title: 20px;
     --ctrl-h: 48px;
-    --bottom-nav-h: 84px; /* mobile thường nav cao hơn */
+    --bottom-nav-h: 84px;
   }
 
-  .container{
-    padding-bottom: calc(var(--bottom-nav-h) + 24px);
-  }
-
-  .tableWrap{ max-height: 58vh; }
   .table{ min-width: 780px; }
 
-  /* Đỡ bể layout các field nếu bạn có inline style gridColumn */
+  /* đỡ bể layout grid nếu có inline style gridColumn */
   .field[style*="grid-column"]{
     grid-column: span 12 !important;
   }
